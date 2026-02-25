@@ -473,7 +473,7 @@ st.divider()
 st.markdown("""
 <div style="text-align:center; color:#888; font-size:0.85rem;">
 Simulador Didáctico PID — Reactor Químico CSTR  |  
-Desarrollado para cursos de Control de Procesos e Ingeniería Química  |  
+Desarrollado para el curso de Control e Instrumentación de Procesos Químicos (UCA/ETSIA)  |  
 Modelo de primer orden con tiempo muerto + Anti-Wind-Up
 </div>
 """, unsafe_allow_html=True)
