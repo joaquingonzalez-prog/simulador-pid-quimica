@@ -47,6 +47,7 @@ st.markdown("""
 # ──────────────────────────────────────────────────
 st.markdown('<div class="main-title">⚗️ Simulador Didáctico de Controlador PID</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Aplicado al control de temperatura en un reactor de tanque agitado (CSTR)</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Autor:José Joaquín González Cortés</div>', unsafe_allow_html=True)
 st.divider()
 
 # ──────────────────────────────────────────────────
