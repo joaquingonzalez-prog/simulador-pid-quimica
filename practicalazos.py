@@ -3,77 +3,43 @@ import numpy as np
 import plotly.graph_objects as go
 import graphviz
 from datetime import datetime
+import re
 
 # ==========================================
 # CONFIGURACIÓN
 # ==========================================
-st.set_page_config(page_title="P&ID Interactivo - Fermentador", layout="wide")
+st.set_page_config(page_title="Diseño P&ID: El Fermentador", layout="wide")
 
 ASIGNATURA = "Control e Instrumentación de Procesos Químicos"
 AUTOR = "José Joaquín González Cortés"
 LICENCIA = "CC BY-NC-SA 4.0"
 
 # ==========================================
-# FUNCIONES DE GENERACIÓN P&ID (GRAPHVIZ)
+# FUNCIONES LÓGICAS Y MATEMÁTICAS
 # ==========================================
-def dibujar_pid_temperatura(estrategia):
-    """Genera el diagrama P&ID en tiempo real basado en la selección del alumno."""
-    dot = graphviz.Digraph(engine='dot')
-    dot.attr(rankdir='LR', nodesep='0.8', ranksep='1.0')
-    
-    # Nodos de Proceso (Equipos)
-    dot.node('F', 'Fermentador\n(Proceso)', shape='box', style='filled', fillcolor='#f0f2f6')
-    dot.node('C', 'Camisa de\nRefrigeración', shape='box', style='filled', fillcolor='#dbe4f0')
-    
-    # Instrumento primario (Transmisor de Temperatura)
-    dot.node('TT1', 'TT\n101', shape='circle', style='filled', fillcolor='white')
-    dot.edge('F', 'TT1', style='solid', label='Medida Tº') # Línea de proceso
-    
-    # Controlador Maestro
-    dot.node('TC1', 'TC\n101', shape='circle', style='filled', fillcolor='white')
-    dot.edge('TT1', 'TC1', style='dashed', label='Señal Eléctrica (4-20mA)')
+def validar_isa(tag, esperado):
+    """Valida si el alumno ha introducido la etiqueta ISA correcta."""
+    tag = tag.strip().upper()
+    if no tag: return False, "Vacío"
+    if tag.startswith(esperado): return True, tag
+    return False, tag
 
-    if estrategia == "Lazo Simple (Feedback)":
-        # Actuador directo
-        dot.node('TV', 'TV\n101', shape='circle', style='filled', fillcolor='#ffcccc')
-        dot.edge('TC1', 'TV', style='dashed', label='Señal de Control')
-        dot.edge('TV', 'C', style='solid', label='Agua Fría')
-        
-    elif estrategia == "Control en Cascada":
-        # Esclavo de Cascada
-        dot.node('TC2', 'TC\n102', shape='circle', style='filled', fillcolor='#ccffcc', 
-                 tooltip='Controlador Esclavo de la Camisa')
-        dot.node('TT2', 'TT\n102', shape='circle', style='filled', fillcolor='white')
-        
-        # Conexión Cascada (El TC1 manda el SetPoint al TC2)
-        dot.edge('TC1', 'TC2', style='dashed', label='SetPoint (SP)', color='blue', penwidth='2')
-        
-        # Medida de la camisa al esclavo
-        dot.edge('C', 'TT2', style='solid')
-        dot.edge('TT2', 'TC2', style='dashed')
-        
-        # Actuador comandado por el esclavo
-        dot.node('TV', 'TV\n102', shape='circle', style='filled', fillcolor='#ffcccc')
-        dot.edge('TC2', 'TV', style='dashed')
-        dot.edge('TV', 'C', style='solid', label='Agua Fría')
-
-    return dot
-
-def simular_dinamica(estrategia):
-    """Simulación diferencial de la respuesta térmica (simplificada)."""
+def simular_dinamica(conexion):
+    """Simula el proceso. Falla si la conexión es directa (Lazo Simple)."""
     t = np.linspace(0, 100, 200)
     T_ferm = np.ones_like(t) * 37.0
     T_cam = np.ones_like(t) * 20.0
     
     for i in range(10, len(t)-1):
         dt = t[i] - t[i-1]
-        perturbacion = 8.0 if t[i] > 20 else 0.0 # Pico exotérmico
+        perturbacion = 8.0 if t[i] > 20 else 0.0 # Crecimiento bacteriano brusco
         
-        error = 37.0 - (T_ferm[i-4] if i > 4 else T_ferm[i]) # Retardo
+        # Tiempo muerto severo en el fermentador
+        error = 37.0 - (T_ferm[i-8] if i > 8 else T_ferm[i]) 
         
-        if estrategia == "Lazo Simple (Feedback)":
-            u = 20.0 - (2.0 * error)
-        else:
+        if conexion == "Directo a la Válvula de Refrigeración (Lazo Simple)":
+            u = 20.0 - (1.5 * error) # Sintonía agresiva que causará inestabilidad
+        else: # Cascada
             sp_cam = 20.0 - (3.5 * error)
             u = 20.0 - (5.0 * (sp_cam - T_cam[i]))
             
@@ -84,92 +50,82 @@ def simular_dinamica(estrategia):
     return t, T_ferm, T_cam
 
 # ==========================================
-# INTERFAZ DE LA APLICACIÓN
+# INTERFAZ DE USUARIO
 # ==========================================
-st.title("🧩 Constructor de Lazos P&ID: El Fermentador")
+st.title("🧩 Reto de Ingeniería: Cableado P&ID")
 st.caption(f"**Asignatura:** {ASIGNATURA} | **Autor:** {AUTOR} | **Norma:** ISA-5.1")
 
-# Introducción al Reto
-with st.expander("📖 Leer el Caso de Estudio (Click para expandir)", expanded=True):
+with st.expander("📖 Especificaciones del Proyecto (Leer antes de diseñar)", expanded=True):
     st.markdown("""
-    **Problema Térmico:** El crecimiento microbiano genera un aumento rápido de temperatura en el fermentador que debe ser controlada a través del paso de agua de refrigeración en el encamisado. Como la sonda de temperatura del fermentador tiene **tiempo muerto** (es lenta), se recomienda usar una arquitectura avanzada para reaccionar antes de que el fermentador se sobrecaliente.
+    **Misión:** Diseñar el lazo de control térmico de un fermentador continuo.
+    * **Restricción Técnica:** La sonda de temperatura del fermentador está encapsulada y presenta un **gran tiempo muerto**.
+    * **Acción Requerida:** Etiquetar los instrumentos según la norma ISA-5.1 y decidir el enrutamiento de las señales eléctricas (4-20mA). Un mal diseño provocará la pérdida del cultivo bacteriano.
     """)
 
-tab_construccion, tab_simulacion, tab_informe = st.tabs([
-    "🛠️ 1. Construir P&ID", 
-    "📈 2. Simular Respuesta", 
-    "📥 3. Informe Técnico"
-])
+tab_diseno, tab_simulacion, tab_informe = st.tabs(["🛠️ 1. Mesa de Diseño", "📈 2. Prueba de Estrés", "📥 3. Informe"])
 
-# --- TAB 1: CONSTRUCTOR VISUAL P&ID ---
-with tab_construccion:
-    st.header("Construcción del Lazo Térmico (Simbología ISA)")
+# --- TAB 1: MESA DE DISEÑO ---
+with tab_diseno:
+    st.header("Especificación de Instrumentos y Enrutamiento")
     
-    col_controles, col_lienzo = st.columns([1, 2])
-    
-    with col_controles:
-        st.write("**Paso 1: Elección de la Arquitectura**")
-        st.info("Selecciona cómo quieres conectar los instrumentos. El diagrama de la derecha se actualizará con tu decisión.")
+    # Usamos un formulario para que el alumno piense todo antes de ver el resultado
+    with st.form("form_diseno"):
+        col1, col2 = st.columns(2)
         
-        estrategia_termica = st.radio(
-            "Estrategia para el Control de Temperatura:",
-            ["Lazo Simple (Feedback)", "Control en Cascada"]
-        )
+        with col1:
+            st.subheader("Lazo Principal (Fermentador)")
+            tag_sensor1 = st.text_input("1. Etiqueta del Sensor/Transmisor de Temperatura:", placeholder="Ej: TT-101")
+            tag_controlador1 = st.text_input("2. Etiqueta del Controlador Maestro:", placeholder="Ej: TC-101")
+            
+            st.subheader("Decisión de Enrutamiento")
+            conexion = st.radio(
+                "3. ¿A dónde enviamos la salida (Output) del Controlador Maestro?",
+                ["Directo a la Válvula de Refrigeración (Lazo Simple)", 
+                 "Al SetPoint de un Controlador Esclavo (Control en Cascada)"]
+            )
+            
+        with col2:
+            st.subheader("Lazo Secundario (Solo si aplica)")
+            tag_sensor2 = st.text_input("4. Sensor de Tº en la Camisa (Si aplica):", placeholder="Ej: TT-102")
+            tag_controlador2 = st.text_input("5. Controlador Esclavo (Si aplica):", placeholder="Ej: TC-102")
+            
+        submit_button = st.form_submit_button(label="Construir Arquitectura P&ID")
+
+    # Si el alumno ha pulsado el botón, evaluamos y dibujamos
+    if submit_button:
+        st.divider()
+        st.subheader("Análisis de tu Diseño")
         
-        st.write("**Análisis de la decisión:**")
-        if estrategia_termica == "Lazo Simple (Feedback)":
-            st.error("❌ **Alerta de Ingeniería:** Con esta estrategia, el controlador TC-101 ataca directamente a la válvula. Dado que la sonda TT-101 tiene retardo, cuando detecte el cambio de temperatura, ya será demasiado tarde.")
-        else:
-            st.success("✅ **Diseño Óptimo:** Has introducido un lazo interno (esclavo). Ahora, si el agua de refrigeración cambia, el TC-102 lo detecta y corrige inmediatamente, antes de que afecte al fermentador.")
-
-    with col_lienzo:
-        st.write("**Diagrama P&ID Generado:**")
-        # Generamos y renderizamos el grafo de Graphviz en tiempo real
-        diagrama_pid = dibujar_pid_temperatura(estrategia_termica)
-        st.graphviz_chart(diagrama_pid, use_container_width=True)
-
-# --- TAB 2: SIMULACIÓN ---
-with tab_simulacion:
-    st.header("Comprobación Dinámica del Lazo Construido")
-    st.write(f"Has diseñado un diagrama basado en **{estrategia_termica}**. Veamos cómo se comporta físicamente frente a una perturbación exotérmica (crecimiento brusco de bacterias).")
-    
-    t, T_ferm, T_cam = simular_dinamica(estrategia_termica)
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=t, y=T_ferm, name="T. Fermentador (TT-101)", line=dict(color='#d62728', width=3)))
-    fig.add_trace(go.Scatter(x=t, y=T_cam, name="T. Camisa (TT-102)", line=dict(color='#1f77b4', dash='dash')))
-    fig.add_hline(y=37.0, line_dash="dot", line_color="green", annotation_text="SetPoint (37ºC)")
-    fig.add_vrect(x0=20, x1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Perturbación Exotérmica")
-    
-    fig.update_layout(title="Dinámica de Temperaturas del Reactor", xaxis_title="Tiempo (min)", yaxis_title="Temperatura (ºC)")
-    st.plotly_chart(fig, use_container_width=True)
-
-# --- TAB 3: INFORME ---
-with tab_informe:
-    st.header("Generar Especificación Funcional")
-    nombre = st.text_input("Ingeniero/a a cargo del diseño:")
-    
-    if nombre:
-        justificacion = "El alumno optó por un control en cascada, protegiendo al sistema del tiempo muerto." if estrategia_termica == "Control en Cascada" else "El alumno optó por un lazo simple, resultando en oscilaciones excesivas debido al retardo de medición."
+        # Validaciones
+        v_s1, t_s1 = validar_isa(tag_sensor1, "TT")
+        v_c1, t_c1 = validar_isa(tag_controlador1, "TC")
         
-        informe = f"""=======================================================
-ESPECIFICACIÓN FUNCIONAL DE INSTRUMENTACIÓN (P&ID)
-Asignatura: {ASIGNATURA}
-Tutor: {AUTOR} | Licencia: {LICENCIA}
-=======================================================
-INGENIERO DISEÑADOR: {nombre}
-FECHA: {datetime.now().strftime("%d/%m/%Y %H:%M")}
-
-1. SUBSISTEMA TÉRMICO (Fermentador - Camisa)
-Estrategia seleccionada : {estrategia_termica}
-Instrumentos generados  : TT-101, TC-101 {', TT-102, TC-102' if estrategia_termica == 'Control en Cascada' else ''}, TV
-
-2. RESULTADOS DE LA SIMULACIÓN
-{justificacion}
-
-3. VALIDACIÓN
-Documento válido como Práctica 3 para el campus virtual.
-======================================================="""
+        errores_isa = 0
+        if not v_s1: st.error(f"❌ Error ISA: Un sensor de temperatura no se llama '{t_s1}'. Debería empezar por 'TT'."); errores_isa += 1
+        if not v_c1: st.error(f"❌ Error ISA: El controlador maestro no se llama '{t_c1}'. Debería empezar por 'TC'."); errores_isa += 1
         
-        st.text_area("Previsualización:", informe, height=300)
-        st.download_button("💾 Descargar Informe de Ingeniería (.txt)", data=informe, file_name=f"PID_{nombre}.txt")
+        if conexion == "Al SetPoint de un Controlador Esclavo (Control en Cascada)":
+            v_s2, t_s2 = validar_isa(tag_sensor2, "TT")
+            v_c2, t_c2 = validar_isa(tag_controlador2, "TC")
+            if not v_s2: st.error(f"❌ Error ISA en lazo esclavo: Sonda incorrecta '{t_s2}'."); errores_isa += 1
+            if not v_c2: st.error(f"❌ Error ISA en lazo esclavo: Controlador incorrecto '{t_c2}'."); errores_isa += 1
+        
+        if errores_isa == 0:
+            st.success("✅ Nomenclatura ISA-5.1 Correcta. Generando diagrama...")
+            
+        # DIBUJO DEL GRAFO CON GRAPHVIZ (Incluso si hay errores, dibujamos lo que ha puesto para que vea su fallo)
+        dot = graphviz.Digraph(engine='dot')
+        dot.attr(rankdir='LR', nodesep='0.8', ranksep='1.0')
+        
+        dot.node('F', 'Fermentador', shape='box', style='filled', fillcolor='#f0f2f6')
+        dot.node('C', 'Camisa', shape='box', style='filled', fillcolor='#dbe4f0')
+        dot.node('S1', t_s1 if tag_sensor1 else '???', shape='circle')
+        dot.node('C1', t_c1 if tag_controlador1 else '???', shape='circle')
+        
+        dot.edge('F', 'S1', style='solid')
+        dot.edge('S1', 'C1', style='dashed')
+        
+        if conexion == "Directo a la Válvula de Refrigeración (Lazo Simple)":
+            dot.node('V', 'TV', shape='circle', style='filled', fillcolor='#ffcccc')
+            dot.edge('C1', 'V', style='dashed', label='Control Directo', color='red')
+            dot.edge('
