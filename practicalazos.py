@@ -92,4 +92,84 @@ st.caption(f"**Asignatura:** {ASIGNATURA} | **Autor:** {AUTOR} | **Norma:** ISA-
 # Introducción al Reto
 with st.expander("📖 Leer el Caso de Estudio (Click para expandir)", expanded=True):
     st.markdown("""
-    **Problema Térmico:** El crecimiento microbiano genera un aumento rápido de temperatura en el fermentador que debe ser controlada a través del paso de agua de refrigeración en el encamis
+    **Problema Térmico:** El crecimiento microbiano genera un aumento rápido de temperatura en el fermentador que debe ser controlada a través del paso de agua de refrigeración en el encamisado. Como la sonda de temperatura del fermentador tiene **tiempo muerto** (es lenta), se recomienda usar una arquitectura avanzada para reaccionar antes de que el fermentador se sobrecaliente.
+    """)
+
+tab_construccion, tab_simulacion, tab_informe = st.tabs([
+    "🛠️ 1. Construir P&ID", 
+    "📈 2. Simular Respuesta", 
+    "📥 3. Informe Técnico"
+])
+
+# --- TAB 1: CONSTRUCTOR VISUAL P&ID ---
+with tab_construccion:
+    st.header("Construcción del Lazo Térmico (Simbología ISA)")
+    
+    col_controles, col_lienzo = st.columns([1, 2])
+    
+    with col_controles:
+        st.write("**Paso 1: Elección de la Arquitectura**")
+        st.info("Selecciona cómo quieres conectar los instrumentos. El diagrama de la derecha se actualizará con tu decisión.")
+        
+        estrategia_termica = st.radio(
+            "Estrategia para el Control de Temperatura:",
+            ["Lazo Simple (Feedback)", "Control en Cascada"]
+        )
+        
+        st.write("**Análisis de la decisión:**")
+        if estrategia_termica == "Lazo Simple (Feedback)":
+            st.error("❌ **Alerta de Ingeniería:** Con esta estrategia, el controlador TC-101 ataca directamente a la válvula. Dado que la sonda TT-101 tiene retardo, cuando detecte el cambio de temperatura, ya será demasiado tarde.")
+        else:
+            st.success("✅ **Diseño Óptimo:** Has introducido un lazo interno (esclavo). Ahora, si el agua de refrigeración cambia, el TC-102 lo detecta y corrige inmediatamente, antes de que afecte al fermentador.")
+
+    with col_lienzo:
+        st.write("**Diagrama P&ID Generado:**")
+        # Generamos y renderizamos el grafo de Graphviz en tiempo real
+        diagrama_pid = dibujar_pid_temperatura(estrategia_termica)
+        st.graphviz_chart(diagrama_pid, use_container_width=True)
+
+# --- TAB 2: SIMULACIÓN ---
+with tab_simulacion:
+    st.header("Comprobación Dinámica del Lazo Construido")
+    st.write(f"Has diseñado un diagrama basado en **{estrategia_termica}**. Veamos cómo se comporta físicamente frente a una perturbación exotérmica (crecimiento brusco de bacterias).")
+    
+    t, T_ferm, T_cam = simular_dinamica(estrategia_termica)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=t, y=T_ferm, name="T. Fermentador (TT-101)", line=dict(color='#d62728', width=3)))
+    fig.add_trace(go.Scatter(x=t, y=T_cam, name="T. Camisa (TT-102)", line=dict(color='#1f77b4', dash='dash')))
+    fig.add_hline(y=37.0, line_dash="dot", line_color="green", annotation_text="SetPoint (37ºC)")
+    fig.add_vrect(x0=20, x1=100, fillcolor="red", opacity=0.05, layer="below", annotation_text="Perturbación Exotérmica")
+    
+    fig.update_layout(title="Dinámica de Temperaturas del Reactor", xaxis_title="Tiempo (min)", yaxis_title="Temperatura (ºC)")
+    st.plotly_chart(fig, use_container_width=True)
+
+# --- TAB 3: INFORME ---
+with tab_informe:
+    st.header("Generar Especificación Funcional")
+    nombre = st.text_input("Ingeniero/a a cargo del diseño:")
+    
+    if nombre:
+        justificacion = "El alumno optó por un control en cascada, protegiendo al sistema del tiempo muerto." if estrategia_termica == "Control en Cascada" else "El alumno optó por un lazo simple, resultando en oscilaciones excesivas debido al retardo de medición."
+        
+        informe = f"""=======================================================
+ESPECIFICACIÓN FUNCIONAL DE INSTRUMENTACIÓN (P&ID)
+Asignatura: {ASIGNATURA}
+Tutor: {AUTOR} | Licencia: {LICENCIA}
+=======================================================
+INGENIERO DISEÑADOR: {nombre}
+FECHA: {datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+1. SUBSISTEMA TÉRMICO (Fermentador - Camisa)
+Estrategia seleccionada : {estrategia_termica}
+Instrumentos generados  : TT-101, TC-101 {', TT-102, TC-102' if estrategia_termica == 'Control en Cascada' else ''}, TV
+
+2. RESULTADOS DE LA SIMULACIÓN
+{justificacion}
+
+3. VALIDACIÓN
+Documento válido como Práctica 3 para el campus virtual.
+======================================================="""
+        
+        st.text_area("Previsualización:", informe, height=300)
+        st.download_button("💾 Descargar Informe de Ingeniería (.txt)", data=informe, file_name=f"PID_{nombre}.txt")
