@@ -20,7 +20,7 @@ LICENCIA = "CC BY-NC-SA 4.0"
 def validar_isa(tag, esperado):
     """Valida si el alumno ha introducido la etiqueta ISA correcta."""
     tag = tag.strip().upper()
-    if no tag: return False, "Vacío"
+    if not tag: return False, "Vacío"
     if tag.startswith(esperado): return True, tag
     return False, tag
 
