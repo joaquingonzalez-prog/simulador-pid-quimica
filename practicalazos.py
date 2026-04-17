@@ -255,4 +255,13 @@ Respuesta: {st.session_state['q1_respuesta']}
 Pregunta 2: Uso de válvulas isoporcentuales.
 Respuesta: {st.session_state['q2_respuesta']}
 
-==================================
+====================================================
+Fin del informe.
+"""
+            st.download_button(
+                label="📥 Descargar Informe (.txt)",
+                data=informe_texto,
+                file_name=f"Practica2_{alumno_id}.txt",
+                mime="text/plain"
+            )
+            st.success("¡Informe generado con éxito! Haz clic en el botón de arriba para descargarlo.")
