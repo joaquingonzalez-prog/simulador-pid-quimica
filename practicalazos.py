@@ -128,4 +128,74 @@ with tab_diseno:
         if conexion == "Directo a la Válvula de Refrigeración (Lazo Simple)":
             dot.node('V', 'TV', shape='circle', style='filled', fillcolor='#ffcccc')
             dot.edge('C1', 'V', style='dashed', label='Control Directo', color='red')
-            dot.edge('
+            dot.edge('V', 'C', style='solid')
+        else:
+            dot.node('S2', t_s2 if tag_sensor2 else '???', shape='circle')
+            dot.node('C2', t_c2 if tag_controlador2 else '???', shape='circle')
+            dot.node('V', 'TV', shape='circle', style='filled', fillcolor='#ffcccc')
+            
+            dot.edge('C1', 'C2', style='dashed', label='SetPoint', color='blue', penwidth='2')
+            dot.edge('C', 'S2', style='solid')
+            dot.edge('S2', 'C2', style='dashed')
+            dot.edge('C2', 'V', style='dashed')
+            dot.edge('V', 'C', style='solid')
+            
+        st.graphviz_chart(dot, use_container_width=True)
+        st.session_state['conexion'] = conexion # Guardamos la decisión para la pestaña 2
+
+# --- TAB 2: SIMULACIÓN ---
+with tab_simulacion:
+    st.header("Prueba de Estrés del Sistema")
+    if 'conexion' not in st.session_state:
+        st.info("⚠️ Primero debes construir tu arquitectura en la Pestaña 1 y pulsar el botón.")
+    else:
+        st.write("Simulando una perturbación exotérmica (multiplicación bacteriana rápida)...")
+        
+        t, T_ferm, T_cam = simular_dinamica(st.session_state['conexion'])
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=t, y=T_ferm, name="Tº Fermentador", line=dict(color='#d62728', width=3)))
+        fig.add_trace(go.Scatter(x=t, y=T_cam, name="Tº Camisa", line=dict(color='#1f77b4', dash='dash')))
+        fig.add_hline(y=37.0, line_dash="dot", line_color="green", annotation_text="Punto de Operación (37ºC)")
+        
+        # Evaluar si ha explotado (T > 42ºC mata el cultivo)
+        max_temp = np.max(T_ferm)
+        if max_temp > 42.0:
+            fig.add_hrect(y0=42, y1=50, fillcolor="red", opacity=0.3, layer="below", annotation_text="ZONA LETAL (>42ºC)")
+            st.error(f"🚨 **¡CATASTROFE!** La temperatura alcanzó los {max_temp:.1f}ºC. El cultivo bacteriano ha muerto. Tu diseño no ha podido compensar el tiempo muerto del sensor. Vuelve a la mesa de diseño e implementa una estrategia avanzada.")
+        else:
+            st.success(f"✅ **¡PROCESO ESTABLE!** La temperatura máxima fue de {max_temp:.1f}ºC. El lazo esclavo absorbió la perturbación a tiempo.")
+
+        fig.update_layout(xaxis_title="Tiempo (min)", yaxis_title="Temperatura (ºC)", yaxis_range=[15, 50])
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- TAB 3: INFORME ---
+with tab_informe:
+    st.header("Auditoría del Diseño")
+    nombre = st.text_input("Firma del Ingeniero/a:")
+    
+    if nombre and 'conexion' in st.session_state:
+        exito = "SATISFACTORIO" if np.max(T_ferm) <= 42.0 else "FALLIDO (Cultivo destruido)"
+        
+        informe = f"""=======================================================
+REPORTE DE AUDITORÍA P&ID
+Asignatura: {ASIGNATURA}
+Profesor: {AUTOR}
+=======================================================
+INGENIERO DISEÑADOR: {nombre}
+FECHA: {datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+ARQUITECTURA DISEÑADA:
+- Enrutamiento: {st.session_state['conexion']}
+
+RESULTADO DE LA PRUEBA DE ESTRÉS:
+- Estado del Sistema: {exito}
+- Temperatura Máxima Alcanzada: {np.max(T_ferm):.1f} ºC
+
+OBSERVACIONES:
+El diseño de lazos en procesos con alto tiempo muerto 
+requiere obligatoriamente estrategias de control avanzado 
+(Cascada) para mantener la integridad operativa.
+======================================================="""
+        st.text_area("Borrador del Informe:", informe, height=300)
+        st.download_button("💾 Exportar Certificado (.txt)", data=informe, file_name=f"Auditoria_{nombre.replace(' ', '_')}.txt")
