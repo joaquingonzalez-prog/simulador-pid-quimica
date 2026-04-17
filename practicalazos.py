@@ -1,201 +1,167 @@
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
-import graphviz
-from datetime import datetime
-import re
 
 # ==========================================
-# CONFIGURACIÓN
+# CONFIGURACIÓN OCW
 # ==========================================
-st.set_page_config(page_title="Diseño P&ID: El Fermentador", layout="wide")
+st.set_page_config(page_title="Laboratorio OCW: Control Avanzado", layout="wide")
 
-ASIGNATURA = "Control e Instrumentación de Procesos Químicos"
-AUTOR = "José Joaquín González Cortés"
-LICENCIA = "CC BY-NC-SA 4.0"
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/OpenCourseWare_logo.svg/512px-OpenCourseWare_logo.svg.png", width=150)
+st.sidebar.title("Práctica 3")
+st.sidebar.markdown("**Asignatura:** Control e Instrumentación de Procesos Químicos")
+st.sidebar.markdown("**Tema 6:** Control Básico en la Industria")
+st.sidebar.divider()
 
-# ==========================================
-# FUNCIONES LÓGICAS Y MATEMÁTICAS
-# ==========================================
-def validar_isa(tag, esperado):
-    """Valida si el alumno ha introducido la etiqueta ISA correcta."""
-    tag = tag.strip().upper()
-    if not tag: return False, "Vacío"
-    if tag.startswith(esperado): return True, tag
-    return False, tag
-
-def simular_dinamica(conexion):
-    """Simula el proceso. Falla si la conexión es directa (Lazo Simple)."""
-    t = np.linspace(0, 100, 200)
-    T_ferm = np.ones_like(t) * 37.0
-    T_cam = np.ones_like(t) * 20.0
-    
-    for i in range(10, len(t)-1):
-        dt = t[i] - t[i-1]
-        perturbacion = 8.0 if t[i] > 20 else 0.0 # Crecimiento bacteriano brusco
-        
-        # Tiempo muerto severo en el fermentador
-        error = 37.0 - (T_ferm[i-8] if i > 8 else T_ferm[i]) 
-        
-        if conexion == "Directo a la Válvula de Refrigeración (Lazo Simple)":
-            u = 20.0 - (1.5 * error) # Sintonía agresiva que causará inestabilidad
-        else: # Cascada
-            sp_cam = 20.0 - (3.5 * error)
-            u = 20.0 - (5.0 * (sp_cam - T_cam[i]))
-            
-        u = np.clip(u, 5, 40)
-        T_cam[i+1] = T_cam[i] + ((u - T_cam[i])/5.0) * dt
-        T_ferm[i+1] = T_ferm[i] + ((T_cam[i] + perturbacion - T_ferm[i])/15.0) * dt
-        
-    return t, T_ferm, T_cam
+# Navegación lateral paso a paso
+modulo = st.sidebar.radio(
+    "Progreso del Laboratorio:",
+    ["1. Introducción al Caso", 
+     "2. Lazo 1: Control de Razón (Nutrientes)", 
+     "3. Lazo 2: Cascada (Temperatura)", 
+     "4. Evaluación y Cierre"]
+)
 
 # ==========================================
-# INTERFAZ DE USUARIO
+# MÓDULO 1: INTRODUCCIÓN
 # ==========================================
-st.title("🧩 Reto de Ingeniería: Cableado P&ID")
-st.caption(f"**Asignatura:** {ASIGNATURA} | **Autor:** {AUTOR} | **Norma:** ISA-5.1")
-
-with st.expander("📖 Especificaciones del Proyecto (Leer antes de diseñar)", expanded=True):
+if modulo == "1. Introducción al Caso":
+    st.title("🏭 Planta de Fermentación Continua")
     st.markdown("""
-    **Misión:** Diseñar el lazo de control térmico de un fermentador continuo.
-    * **Restricción Técnica:** La sonda de temperatura del fermentador está encapsulada y presenta un **gran tiempo muerto**.
-    * **Acción Requerida:** Etiquetar los instrumentos según la norma ISA-5.1 y decidir el enrutamiento de las señales eléctricas (4-20mA). Un mal diseño provocará la pérdida del cultivo bacteriano.
+    ### Objetivos de Aprendizaje
+    Al finalizar este módulo virtual, el alumno será capaz de:
+    1. Identificar las limitaciones del control *Feedback* simple frente a perturbaciones específicas.
+    2. Aplicar la estrategia de **Control de Razón (Ratio)** para mantener proporciones de mezcla.
+    3. Aplicar el **Control en Cascada** para mitigar los efectos del tiempo muerto en sistemas térmicos.
+    
+    ### Descripción del Proceso
+    En este laboratorio analizaremos un fermentador continuo. Para que los microorganismos sobrevivan y produzcan de forma óptima, debemos resolver dos grandes retos de instrumentación:
+    * **Reto A (Mezcla):** El medio de cultivo se forma diluyendo un nutriente concentrado con agua. Si el caudal de agua fluctúa, la concentración del alimento cambiará, matando de hambre o sobrealimentando a las bacterias.
+    * **Reto B (Refrigeración):** La reacción es exotérmica. Necesitamos enfriar el reactor con una camisa de agua fría, pero el sensor de temperatura del reactor es muy grueso y tarda en detectar los cambios (tiene un alto tiempo muerto).
+    
+    👈 **Utiliza el menú lateral para avanzar al primer reto.**
     """)
+    st.info("💡 **Nota metodológica:** Asegúrate de haber repasado los apuntes del Tema 6 (Estrategias de Control) antes de continuar.")
 
-tab_diseno, tab_simulacion, tab_informe = st.tabs(["🛠️ 1. Mesa de Diseño", "📈 2. Prueba de Estrés", "📥 3. Informe"])
-
-# --- TAB 1: MESA DE DISEÑO ---
-with tab_diseno:
-    st.header("Especificación de Instrumentos y Enrutamiento")
+# ==========================================
+# MÓDULO 2: CONTROL DE RAZÓN
+# ==========================================
+elif modulo == "2. Lazo 1: Control de Razón (Nutrientes)":
+    st.title("🧪 Reto A: Dosificación de Nutrientes")
+    st.markdown("""
+    El cultivo requiere que por cada **10 L/min de agua de dilución**, entren exactamente **2 L/min de nutriente concentrado** (Razón Óptima $R = 0.2$). 
     
-    # Usamos un formulario para que el alumno piense todo antes de ver el resultado
-    with st.form("form_diseno"):
-        col1, col2 = st.columns(2)
+    Experimenta con los deslizadores. Observa qué ocurre con un lazo simple (que intenta mantener el nutriente fijo a 2 L/min sin importar el agua) frente a un control de razón que "sigue" al caudal de agua.
+    """)
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.subheader("Panel de Operación")
+        caudal_agua = st.slider("Caudal de Agua de Dilución (Perturbación) [L/min]:", min_value=5.0, max_value=20.0, value=10.0, step=1.0)
+        estrategia_mezcla = st.radio("Estrategia de Control del Nutriente:", ["Control Fijo (Lazo Simple)", "Control de Razón (Ratio)"])
         
-        with col1:
-            st.subheader("Lazo Principal (Fermentador)")
-            tag_sensor1 = st.text_input("1. Etiqueta del Sensor/Transmisor de Temperatura:", placeholder="Ej: TT-101")
-            tag_controlador1 = st.text_input("2. Etiqueta del Controlador Maestro:", placeholder="Ej: TC-101")
-            
-            st.subheader("Decisión de Enrutamiento")
-            conexion = st.radio(
-                "3. ¿A dónde enviamos la salida (Output) del Controlador Maestro?",
-                ["Directo a la Válvula de Refrigeración (Lazo Simple)", 
-                 "Al SetPoint de un Controlador Esclavo (Control en Cascada)"]
-            )
-            
-        with col2:
-            st.subheader("Lazo Secundario (Solo si aplica)")
-            tag_sensor2 = st.text_input("4. Sensor de Tº en la Camisa (Si aplica):", placeholder="Ej: TT-102")
-            tag_controlador2 = st.text_input("5. Controlador Esclavo (Si aplica):", placeholder="Ej: TC-102")
-            
-        submit_button = st.form_submit_button(label="Construir Arquitectura P&ID")
-
-    # Si el alumno ha pulsado el botón, evaluamos y dibujamos
-    if submit_button:
-        st.divider()
-        st.subheader("Análisis de tu Diseño")
+    with col2:
+        # Lógica de la mezcla
+        caudal_nutriente_fijo = 2.0
         
-        # Validaciones
-        v_s1, t_s1 = validar_isa(tag_sensor1, "TT")
-        v_c1, t_c1 = validar_isa(tag_controlador1, "TC")
-        
-        errores_isa = 0
-        if not v_s1: st.error(f"❌ Error ISA: Un sensor de temperatura no se llama '{t_s1}'. Debería empezar por 'TT'."); errores_isa += 1
-        if not v_c1: st.error(f"❌ Error ISA: El controlador maestro no se llama '{t_c1}'. Debería empezar por 'TC'."); errores_isa += 1
-        
-        if conexion == "Al SetPoint de un Controlador Esclavo (Control en Cascada)":
-            v_s2, t_s2 = validar_isa(tag_sensor2, "TT")
-            v_c2, t_c2 = validar_isa(tag_controlador2, "TC")
-            if not v_s2: st.error(f"❌ Error ISA en lazo esclavo: Sonda incorrecta '{t_s2}'."); errores_isa += 1
-            if not v_c2: st.error(f"❌ Error ISA en lazo esclavo: Controlador incorrecto '{t_c2}'."); errores_isa += 1
-        
-        if errores_isa == 0:
-            st.success("✅ Nomenclatura ISA-5.1 Correcta. Generando diagrama...")
-            
-        # DIBUJO DEL GRAFO CON GRAPHVIZ (Incluso si hay errores, dibujamos lo que ha puesto para que vea su fallo)
-        dot = graphviz.Digraph(engine='dot')
-        dot.attr(rankdir='LR', nodesep='0.8', ranksep='1.0')
-        
-        dot.node('F', 'Fermentador', shape='box', style='filled', fillcolor='#f0f2f6')
-        dot.node('C', 'Camisa', shape='box', style='filled', fillcolor='#dbe4f0')
-        dot.node('S1', t_s1 if tag_sensor1 else '???', shape='circle')
-        dot.node('C1', t_c1 if tag_controlador1 else '???', shape='circle')
-        
-        dot.edge('F', 'S1', style='solid')
-        dot.edge('S1', 'C1', style='dashed')
-        
-        if conexion == "Directo a la Válvula de Refrigeración (Lazo Simple)":
-            dot.node('V', 'TV', shape='circle', style='filled', fillcolor='#ffcccc')
-            dot.edge('C1', 'V', style='dashed', label='Control Directo', color='red')
-            dot.edge('V', 'C', style='solid')
+        if estrategia_mezcla == "Control Fijo (Lazo Simple)":
+            nutriente_real = caudal_nutriente_fijo
         else:
-            dot.node('S2', t_s2 if tag_sensor2 else '???', shape='circle')
-            dot.node('C2', t_c2 if tag_controlador2 else '???', shape='circle')
-            dot.node('V', 'TV', shape='circle', style='filled', fillcolor='#ffcccc')
+            nutriente_real = caudal_agua * 0.2
             
-            dot.edge('C1', 'C2', style='dashed', label='SetPoint', color='blue', penwidth='2')
-            dot.edge('C', 'S2', style='solid')
-            dot.edge('S2', 'C2', style='dashed')
-            dot.edge('C2', 'V', style='dashed')
-            dot.edge('V', 'C', style='solid')
-            
-        st.graphviz_chart(dot, use_container_width=True)
-        st.session_state['conexion'] = conexion # Guardamos la decisión para la pestaña 2
-
-# --- TAB 2: SIMULACIÓN ---
-with tab_simulacion:
-    st.header("Prueba de Estrés del Sistema")
-    if 'conexion' not in st.session_state:
-        st.info("⚠️ Primero debes construir tu arquitectura en la Pestaña 1 y pulsar el botón.")
-    else:
-        st.write("Simulando una perturbación exotérmica (multiplicación bacteriana rápida)...")
+        concentracion = nutriente_real / (caudal_agua + nutriente_real)
+        concentracion_ideal = 2.0 / (10.0 + 2.0)
         
-        t, T_ferm, T_cam = simular_dinamica(st.session_state['conexion'])
-        
+        # Gráfica de barras comparativa
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=t, y=T_ferm, name="Tº Fermentador", line=dict(color='#d62728', width=3)))
-        fig.add_trace(go.Scatter(x=t, y=T_cam, name="Tº Camisa", line=dict(color='#1f77b4', dash='dash')))
-        fig.add_hline(y=37.0, line_dash="dot", line_color="green", annotation_text="Punto de Operación (37ºC)")
+        fig.add_trace(go.Bar(x=['Concentración Actual'], y=[concentracion], marker_color='blue' if abs(concentracion - concentracion_ideal) < 0.01 else 'red'))
+        fig.add_hline(y=concentracion_ideal, line_dash="dash", line_color="green", annotation_text="Concentración Óptima")
+        fig.update_layout(yaxis_title="Fracción de Nutriente", yaxis_range=[0, 0.4], title="Calidad del Medio de Cultivo")
         
-        # Evaluar si ha explotado (T > 42ºC mata el cultivo)
-        max_temp = np.max(T_ferm)
-        if max_temp > 42.0:
-            fig.add_hrect(y0=42, y1=50, fillcolor="red", opacity=0.3, layer="below", annotation_text="ZONA LETAL (>42ºC)")
-            st.error(f"🚨 **¡CATASTROFE!** La temperatura alcanzó los {max_temp:.1f}ºC. El cultivo bacteriano ha muerto. Tu diseño no ha podido compensar el tiempo muerto del sensor. Vuelve a la mesa de diseño e implementa una estrategia avanzada.")
-        else:
-            st.success(f"✅ **¡PROCESO ESTABLE!** La temperatura máxima fue de {max_temp:.1f}ºC. El lazo esclavo absorbió la perturbación a tiempo.")
-
-        fig.update_layout(xaxis_title="Tiempo (min)", yaxis_title="Temperatura (ºC)", yaxis_range=[15, 50])
         st.plotly_chart(fig, use_container_width=True)
-
-# --- TAB 3: INFORME ---
-with tab_informe:
-    st.header("Auditoría del Diseño")
-    nombre = st.text_input("Firma del Ingeniero/a:")
-    
-    if nombre and 'conexion' in st.session_state:
-        exito = "SATISFACTORIO" if np.max(T_ferm) <= 42.0 else "FALLIDO (Cultivo destruido)"
         
-        informe = f"""=======================================================
-REPORTE DE AUDITORÍA P&ID
-Asignatura: {ASIGNATURA}
-Profesor: {AUTOR}
-=======================================================
-INGENIERO DISEÑADOR: {nombre}
-FECHA: {datetime.now().strftime("%d/%m/%Y %H:%M")}
+        if abs(concentracion - concentracion_ideal) > 0.01:
+            st.error("⚠️ La concentración se ha desviado peligrosamente de la óptima.")
+        else:
+            st.success("✅ Medio de cultivo en condiciones perfectas.")
 
-ARQUITECTURA DISEÑADA:
-- Enrutamiento: {st.session_state['conexion']}
+# ==========================================
+# MÓDULO 3: CONTROL EN CASCADA
+# ==========================================
+elif modulo == "3. Lazo 2: Cascada (Temperatura)":
+    st.title("🌡️ Reto B: Refrigeración con Tiempo Muerto")
+    st.markdown("""
+    El crecimiento celular genera un aumento brusco de temperatura. La sonda (TT-101) tarda **5 minutos** en reaccionar. 
+    Selecciona la estrategia y observa la dinámica del sistema frente a un "pico" exotérmico en el minuto 20.
+    """)
+    
+    estrategia_temp = st.selectbox("Estrategia del Lazo Térmico:", ["Selecciona...", "Control Feedback Simple", "Control en Cascada"])
+    
+    if estrategia_temp != "Selecciona...":
+        # Simulación matemática
+        t = np.linspace(0, 80, 200)
+        T_ferm = np.ones_like(t) * 37.0
+        T_cam = np.ones_like(t) * 20.0
+        
+        for i in range(10, len(t)-1):
+            dt = t[i] - t[i-1]
+            perturbacion = 10.0 if 20 < t[i] < 40 else 0.0 # Perturbación tipo pulso
+            
+            error_m = 37.0 - (T_ferm[i-12] if i > 12 else T_ferm[i]) # Fuerte retardo
+            
+            if estrategia_temp == "Control Feedback Simple":
+                u = 20.0 - (2.5 * error_m)
+            else: # Cascada
+                sp_c = 20.0 - (4.0 * error_m)
+                u = 20.0 - (6.0 * (sp_c - T_cam[i])) # El esclavo corrige rápido
+                
+            u = np.clip(u, 5, 40)
+            T_cam[i+1] = T_cam[i] + ((u - T_cam[i])/3.0) * dt
+            T_ferm[i+1] = T_ferm[i] + ((T_cam[i] + perturbacion - T_ferm[i])/10.0) * dt
+            
+        # Graficar
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=t, y=T_ferm, name="T. Fermentador", line=dict(color='red', width=3)))
+        fig2.add_trace(go.Scatter(x=t, y=T_cam, name="T. Camisa", line=dict(color='blue', dash='dash')))
+        fig2.add_hline(y=37.0, line_dash="dot", line_color="green", annotation_text="Setpoint 37ºC")
+        fig2.add_hrect(y0=40, y1=45, fillcolor="red", opacity=0.2, annotation_text="ZONA CRÍTICA")
+        fig2.update_layout(xaxis_title="Tiempo (min)", yaxis_title="Temperatura (ºC)", yaxis_range=[15, 45])
+        
+        st.plotly_chart(fig2, use_container_width=True)
+        
+        if estrategia_temp == "Control Feedback Simple":
+            st.warning("Fíjate cómo el lazo simple reacciona tarde. La temperatura sube a la zona crítica porque el controlador no 've' el aumento de temperatura hasta que es demasiado tarde.")
+        else:
+            st.success("¡Excelente! Al usar un controlador esclavo (Cascada) midiendo la camisa, reaccionamos al cambio de energía antes de que la temperatura del fermentador se descontrole.")
 
-RESULTADO DE LA PRUEBA DE ESTRÉS:
-- Estado del Sistema: {exito}
-- Temperatura Máxima Alcanzada: {np.max(T_ferm):.1f} ºC
-
-OBSERVACIONES:
-El diseño de lazos en procesos con alto tiempo muerto 
-requiere obligatoriamente estrategias de control avanzado 
-(Cascada) para mantener la integridad operativa.
-======================================================="""
-        st.text_area("Borrador del Informe:", informe, height=300)
-        st.download_button("💾 Exportar Certificado (.txt)", data=informe, file_name=f"Auditoria_{nombre.replace(' ', '_')}.txt")
+# ==========================================
+# MÓDULO 4: EVALUACIÓN
+# ==========================================
+elif modulo == "4. Evaluación y Cierre":
+    st.title("📝 Autoevaluación del Laboratorio")
+    st.markdown("Comprueba si has asimilado los conceptos del Tema 6 y de esta práctica.")
+    
+    with st.form("quiz"):
+        q1 = st.radio("1. Según el Tema 6, ¿cuál es el objetivo primordial e innegociable de un sistema de control?", 
+                      ["Optimizar el beneficio económico.", "Proteger el medio ambiente.", "Garantizar la seguridad (Personal y Planta).", "Mejorar la calidad del producto."])
+        
+        q2 = st.radio("2. ¿Por qué el control de Razón (Ratio) era necesario en la dosificación de nutrientes?", 
+                      ["Porque la reacción es exotérmica.", "Porque hay un flujo salvaje (agua) que no podemos controlar directamente, y el nutriente debe mantener proporción con él.", "Para evitar la cavitación en la bomba.", "Para corregir el tiempo muerto del sensor de nivel."])
+        
+        q3 = st.radio("3. ¿Cuál es el propósito principal del bucle esclavo (secundario) en un control en cascada?", 
+                      ["Absorber perturbaciones locales antes de que afecten a la variable principal.", "Reducir el coste de la instrumentación.", "Controlar dos válvulas al mismo tiempo.", "Sustituir al Sistema Instrumentado de Seguridad (SIS)."])
+        
+        submit = st.form_submit_button("Evaluar Respuestas")
+        
+    if submit:
+        score = 0
+        if "seguridad" in q1.lower(): score += 1
+        if "salvaje" in q2.lower(): score += 1
+        if "absorber perturbaciones" in q3.lower(): score += 1
+        
+        st.divider()
+        if score == 3:
+            st.success(f"**¡Puntuación Perfecta ({score}/3)!** Has superado con éxito el Laboratorio Virtual de Estrategias de Control.")
+            st.balloons()
+        else:
+            st.warning(f"**Puntuación: {score}/3.** Revisa la teoría en los módulos anteriores o en los apuntes del profesor.")
